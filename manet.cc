@@ -1,4 +1,3 @@
-/* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 University of Kansas
  *
@@ -29,6 +28,22 @@
  * US Department of Defense (DoD), and ITTC at The University of Kansas.
  */
 
+//LAB 2
+//IAN ROBERTS AND ANNA CASE
+
+/* TOPOLOGY
+*********      **********
+BUILDING*      *BUILDING*
+*********      **********
+
+*********      **********
+BUILDING*      *BUILDING*
+*********      **********
+where each building contains 10 nodes
+each building is 1000 x 500 m
+buildings are separated by 500 m
+*/
+
 #include <fstream>
 #include <iostream>
 #include "ns3/core-module.h"
@@ -43,6 +58,8 @@
 #include "ns3/applications-module.h"
 #include "ns3/netanim-module.h"
 #include "ns3/flow-monitor-helper.h"
+#include "ns3/propagation-loss-model.h"
+#include "ns3/propagation-delay-model.h"
 
 using namespace ns3;
 using namespace dsr;
@@ -86,6 +103,7 @@ RoutingExperiment::RoutingExperiment ()
 {
 }
 
+//formats output to terminal
 static inline string PrintReceivedPacket (Ptr<Socket> socket, Ptr<Packet> packet, Address senderAddress) {
   ostringstream oss;
   oss << Simulator::Now ().GetSeconds () << " " << socket->GetNode ()->GetId ();
@@ -98,6 +116,7 @@ static inline string PrintReceivedPacket (Ptr<Socket> socket, Ptr<Packet> packet
   return oss.str ();
 }
 
+//Updates count and outputs to terminal
 void RoutingExperiment::ReceivePacket (Ptr<Socket> socket) {
   Ptr<Packet> packet;
   Address senderAddress;
@@ -135,7 +154,7 @@ string RoutingExperiment::CommandSetup (int argc, char **argv) {
   CommandLine cmd;
   cmd.AddValue ("CSVfileName", "The name of the CSV output file name", m_CSVfileName);
   cmd.AddValue ("traceMobility", "Enable mobility tracing", m_traceMobility);
-  cmd.AddValue ("protocol", "1=OLSR;2=AODV;3=DSDV;4=DSR", m_protocol);
+  cmd.AddValue ("protocol", "1=OLSR;2=AODV;3=DSDV", m_protocol);
   cmd.AddValue ("power", "Tx power dBm", m_txp);
   cmd.Parse (argc, argv);
   return m_CSVfileName;
@@ -160,7 +179,8 @@ void RoutingExperiment::Run (int nSinks, string CSVfileName) {
   Packet::EnablePrinting ();
   m_nSinks = nSinks;
   m_CSVfileName = CSVfileName;
-  int nWifis = 50;
+  int nWifis = 40;
+  int nBuilding = 10;
   double TotalTime = 200.0;
   string rate ("2048bps");
   string phyMode ("DsssRate11Mbps");
@@ -173,18 +193,83 @@ void RoutingExperiment::Run (int nSinks, string CSVfileName) {
   Config::SetDefault ("ns3::OnOffApplication::DataRate",  StringValue (rate));
   Config::SetDefault ("ns3::WifiRemoteStationManager::NonUnicastMode",StringValue (phyMode));
 
-  NodeContainer adhocNodes;
-  adhocNodes.Create (nWifis);
+  NodeContainer b1, b2, b3, b4, adhocNodes;
+  b1.Create (nBuilding);
+  adhocNodes.Add(b1);
+  b2.Create (nBuilding);
+  adhocNodes.Add(b2);
+  b3.Create (nBuilding);
+  adhocNodes.Add(b3);
+  b4.Create (nBuilding);
+  adhocNodes.Add(b4);
+
+  //Instantiates static mobility
+  MobilityHelper mobility;
+  Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator> ();
+  for (int one=0; one<nBuilding; one+=20)
+    positionAlloc->Add (Vector (1000, one, 0.0));
+  for (int two=0; two<nBuilding; two+=20)
+    positionAlloc->Add (Vector (1500, two, 0.0));
+  for (int three=0; three<nBuilding; three+=20)
+    positionAlloc->Add (Vector (1500,three+1000,0.0));
+  for (int four=0; four<nBuilding; four+=20)
+    positionAlloc->Add (Vector (1000,four+1000,0.0));
+  mobility.SetPositionAllocator (positionAlloc);
+  mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+  mobility.Install (adhocNodes);
+
+  MobilityHelper walk;
+  //Bounds for building 1
+  walk.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
+                             "Mode", StringValue ("Time"),
+                             "Time", StringValue ("2s"),
+                             "Speed", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
+                             "Bounds", StringValue ("0|1000|0|500"));
+  walk.Install(b1);
+  //Bounds for building 2
+  walk.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
+                             "Mode", StringValue ("Time"),
+                             "Time", StringValue ("2s"),
+                             "Speed", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
+                             "Bounds", StringValue ("1500|2500|0|500"));
+  walk.Install(b2);
+  //Bounds for building 3
+  walk.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
+                             "Mode", StringValue ("Time"),
+                             "Time", StringValue ("2s"),
+                             "Speed", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
+                             "Bounds", StringValue ("1500|2500|1000|1500"));
+  walk.Install(b3);
+  //Bounds for building 4
+  walk.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
+                             "Mode", StringValue ("Time"),
+                             "Time", StringValue ("2s"),
+                             "Speed", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
+                             "Bounds", StringValue ("0|1000|1000|1500"));
+  walk.Install(b4);
 
   // setting up wifi phy and channel using helpers
   WifiHelper wifi;
   wifi.SetStandard (WIFI_PHY_STANDARD_80211b);
 
+  Ptr<MatrixPropagationLossModel> lossModel = CreateObject<MatrixPropagationLossModel> ();
+  lossModel->SetDefaultLoss (200); // set default loss to 200 dB (no link)
+  for (int g=0; g<(nBuilding-1); g++) {
+    lossModel->SetLoss (b1.Get (g)->GetObject<MobilityModel> (), b1.Get (g+1)->GetObject<MobilityModel> (), 50);
+    lossModel->SetLoss (b2.Get (g)->GetObject<MobilityModel> (), b2.Get (g+1)->GetObject<MobilityModel> (), 50);
+    lossModel->SetLoss (b3.Get (g)->GetObject<MobilityModel> (), b3.Get (g+1)->GetObject<MobilityModel> (), 50);
+    lossModel->SetLoss (b4.Get (g)->GetObject<MobilityModel> (), b4.Get (g+1)->GetObject<MobilityModel> (), 50);
+  }
+  lossModel->SetLoss (b1.Get (3)->GetObject<MobilityModel> (), b2.Get (3)->GetObject<MobilityModel> (), 60);
+  lossModel->SetLoss (b2.Get (3)->GetObject<MobilityModel> (), b3.Get (3)->GetObject<MobilityModel> (), 60);
+  lossModel->SetLoss (b3.Get (3)->GetObject<MobilityModel> (), b4.Get (3)->GetObject<MobilityModel> (), 60);
+  lossModel->SetLoss (b4.Get (3)->GetObject<MobilityModel> (), b1.Get (3)->GetObject<MobilityModel> (), 60);
+
+  Ptr<YansWifiChannel> wifiChannel = CreateObject <YansWifiChannel> ();
+  wifiChannel->SetPropagationLossModel (lossModel);
+  wifiChannel->SetPropagationDelayModel (CreateObject <ConstantSpeedPropagationDelayModel> ());
   YansWifiPhyHelper wifiPhy =  YansWifiPhyHelper::Default ();
-  YansWifiChannelHelper wifiChannel;
-  wifiChannel.SetPropagationDelay ("ns3::ConstantSpeedPropagationDelayModel");
-  wifiChannel.AddPropagationLoss ("ns3::FriisPropagationLossModel");
-  wifiPhy.SetChannel (wifiChannel.Create ());
+  wifiPhy.SetChannel (wifiChannel);
 
   // Add a mac and disable rate control
   WifiMacHelper wifiMac;
@@ -192,44 +277,18 @@ void RoutingExperiment::Run (int nSinks, string CSVfileName) {
                                 "DataMode",StringValue (phyMode),
                                 "ControlMode",StringValue (phyMode));
 
-  wifiPhy.Set ("TxPowerStart",DoubleValue (m_txp));
-  wifiPhy.Set ("TxPowerEnd", DoubleValue (m_txp));
+ // wifiPhy.Set ("TxPowerStart",DoubleValue (m_txp));
+ // wifiPhy.Set ("TxPowerEnd", DoubleValue (m_txp));
 
   wifiMac.SetType ("ns3::AdhocWifiMac");
   NetDeviceContainer adhocDevices = wifi.Install (wifiPhy, wifiMac, adhocNodes);
 
-  MobilityHelper mobilityAdhoc;
-  int64_t streamIndex = 0; // used to get consistent mobility across scenarios
-
-  ObjectFactory pos;
-  pos.SetTypeId ("ns3::RandomRectanglePositionAllocator");
-  pos.Set ("X", StringValue ("ns3::UniformRandomVariable[Min=0.0|Max=300.0]"));
-  pos.Set ("Y", StringValue ("ns3::UniformRandomVariable[Min=0.0|Max=1500.0]"));
-
-  Ptr<PositionAllocator> taPositionAlloc = pos.Create ()->GetObject<PositionAllocator> ();
-  streamIndex += taPositionAlloc->AssignStreams (streamIndex);
-
-  stringstream ssSpeed;
-  ssSpeed << "ns3::UniformRandomVariable[Min=0.0|Max=" << nodeSpeed << "]";
-  stringstream ssPause;
-  ssPause << "ns3::ConstantRandomVariable[Constant=" << nodePause << "]";
-  mobilityAdhoc.SetMobilityModel ("ns3::RandomWaypointMobilityModel",
-                                  "Speed", StringValue (ssSpeed.str ()),
-                                  "Pause", StringValue (ssPause.str ()),
-                                  "PositionAllocator", PointerValue (taPositionAlloc));
-  mobilityAdhoc.SetPositionAllocator (taPositionAlloc);
-  mobilityAdhoc.Install (adhocNodes);
-  streamIndex += mobilityAdhoc.AssignStreams (adhocNodes, streamIndex);
-  NS_UNUSED (streamIndex); // From this point, streamIndex is unused
-
+  //Handles Routing
   AodvHelper aodv;
   OlsrHelper olsr;
   DsdvHelper dsdv;
-  DsrHelper dsr;
-  DsrMainHelper dsrMain;
   Ipv4ListRoutingHelper list;
   InternetStackHelper internet;
-
   switch (m_protocol) {
     case 1:
       list.Add (olsr, 100);
@@ -243,23 +302,13 @@ void RoutingExperiment::Run (int nSinks, string CSVfileName) {
       list.Add (dsdv, 100);
       m_protocolName = "DSDV";
       break;
-    case 4:
-      m_protocolName = "DSR";
-      break;
     default:
       NS_FATAL_ERROR ("No such protocol:" << m_protocol);
     }
-
-  if (m_protocol < 4) {
-    internet.SetRoutingHelper (list);
-    internet.Install (adhocNodes);
-  } else if (m_protocol == 4) {
-    internet.Install (adhocNodes);
-    dsrMain.Install (dsr, adhocNodes);
-  }
+  internet.SetRoutingHelper (list);
+  internet.Install (adhocNodes);
 
   NS_LOG_INFO ("assigning ip address");
-
   Ipv4AddressHelper addressAdhoc;
   addressAdhoc.SetBase ("10.1.1.0", "255.255.255.0");
   Ipv4InterfaceContainer adhocInterfaces;
@@ -269,15 +318,15 @@ void RoutingExperiment::Run (int nSinks, string CSVfileName) {
   onoff1.SetAttribute ("OnTime", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"));
   onoff1.SetAttribute ("OffTime", StringValue ("ns3::ConstantRandomVariable[Constant=0.0]"));
 
-  for (int i = 0; i < nSinks; i++) {
+  for (int i = 0; i < m_nSinks; i++) {
     Ptr<Socket> sink = SetupPacketReceive (adhocInterfaces.GetAddress (i), adhocNodes.Get (i));
 
     AddressValue remoteAddress (InetSocketAddress (adhocInterfaces.GetAddress (i), port));
     onoff1.SetAttribute ("Remote", remoteAddress);
 
     Ptr<UniformRandomVariable> var = CreateObject<UniformRandomVariable> ();
-    ApplicationContainer temp = onoff1.Install (adhocNodes.Get (i + nSinks));
-    temp.Start (Seconds (var->GetValue (50.0,51.0)));
+    ApplicationContainer temp = onoff1.Install (adhocNodes.Get (i + m_nSinks));
+    temp.Start (Seconds (var->GetValue (50.0,60.0)));
     temp.Stop (Seconds (TotalTime));
   }
 
@@ -297,16 +346,13 @@ void RoutingExperiment::Run (int nSinks, string CSVfileName) {
   ss4 << rate;
   string sRate = ss4.str ();
 
-  AsciiTraceHelper ascii;
-  MobilityHelper::EnableAsciiAll (ascii.CreateFileStream (tr_name + ".mob"));
-
-  AnimationInterface anim ("anim.xml");
+/*  //Graphical interpretation
+  AnimationInterface anim ("manet.xml");
   anim.SetMobilityPollInterval(Time(0.5));
   anim.SetStartTime (Seconds(50));
   anim.SetStopTime (Seconds(200));
   anim.EnablePacketMetadata(true);
-  //anim.UpdateNodeDescription (SS, "");
-
+*/  //Enables flowmonitor for XML
   Ptr<FlowMonitor> flowmon;
   FlowMonitorHelper flowmonHelper;
   flowmon = flowmonHelper.InstallAll ();
