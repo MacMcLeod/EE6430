@@ -77,6 +77,8 @@ public:
   //static void SetMACParam (ns3::NetDeviceContainer & devices,
   //                                 int slotDistance);
   string CommandSetup (int argc, char **argv);
+//  void ReceivePacket (Ptr<Socket> socket);
+
 
 private:
   Ptr<Socket> SetupPacketReceive (Ipv4Address addr, Ptr<Node> node);
@@ -100,7 +102,7 @@ RoutingExperiment::RoutingExperiment ()
     bytesTotal (0),
     packetsReceived (0),
     CSVfileName ("manet.output.csv"),
-    m_txp(7.5),
+    m_txp(30),
     m_traceMobility (false),
     m_protocol (1) // OLSR
 {
@@ -180,7 +182,7 @@ int main (int argc, char *argv[]) {
 
 void RoutingExperiment::Run (int nSinks, string CSVfileName) {
   Packet::EnablePrinting ();
-  int nWifis = 40;
+  //int nWifis = 40;
   int nBuilding = 10;
   double stories = 30;
   double naught = 0;
@@ -190,12 +192,13 @@ void RoutingExperiment::Run (int nSinks, string CSVfileName) {
   double y1 = 50;
   double y2 = 75;
   double y3 = 125;
-  double TotalTime = 100.0;
+  double TotalTime = 500.0;
+  int numPackets = 150;
+  int packetSize = 64;
+  int interPacketInterval = 1;
   string rate ("2048bps");
   string phyMode ("DsssRate11Mbps");
   string tr_name ("manet");
-  int nodeSpeed = 20; //in m/s
-  int nodePause = 0; //in s
   m_protocolName = "protocol";
 
   Config::SetDefault  ("ns3::OnOffApplication::PacketSize",StringValue ("64"));
@@ -228,37 +231,37 @@ void RoutingExperiment::Run (int nSinks, string CSVfileName) {
   mobility.SetPositionAllocator (positionAlloc);
   mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
   mobility.Install (adhocNodes);
-/*
+
   MobilityHelper walk;
   //Bounds for building 1
   walk.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
                              "Mode", StringValue ("Time"),
                              "Time", StringValue ("2s"),
                              "Speed", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
-                             "Bounds", StringValue ("0|1000|0|500"));
+                             "Bounds", StringValue ("0|100|0|50"));
   walk.Install(b1);
   //Bounds for building 2
   walk.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
                              "Mode", StringValue ("Time"),
                              "Time", StringValue ("2s"),
                              "Speed", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
-                             "Bounds", StringValue ("1500|2500|0|500"));
+                             "Bounds", StringValue ("125|225|0|50"));
   walk.Install(b2);
   //Bounds for building 3
   walk.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
                              "Mode", StringValue ("Time"),
                              "Time", StringValue ("2s"),
                              "Speed", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
-                             "Bounds", StringValue ("1500|2500|1000|1500"));
+                             "Bounds", StringValue ("125|225|75|125"));
   walk.Install(b3);
   //Bounds for building 4
   walk.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
                              "Mode", StringValue ("Time"),
                              "Time", StringValue ("2s"),
                              "Speed", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
-                             "Bounds", StringValue ("0|1000|1000|1500"));
+                             "Bounds", StringValue ("0|100|75|125"));
   walk.Install(b4);
-*/
+
 
   Ptr<Building> Building1 = CreateObject<Building> ();
   Building1->SetBoundaries (Box (naught, x1, naught, y1, naught, stories));
@@ -296,21 +299,7 @@ void RoutingExperiment::Run (int nSinks, string CSVfileName) {
   BuildingsHelper::MakeMobilityModelConsistent ();
 
   Ptr<FriisPropagationLossModel> lossModel = CreateObject<FriisPropagationLossModel> ();
-/*
-  //Implements a constant loss
-  Ptr<MatrixPropagationLossModel> lossModel = CreateObject<MatrixPropagationLossModel> ();
-  lossModel->SetDefaultLoss (200); // set default loss to 200 dB (no link)
-  for (int g=0; g<(nBuilding-1); g++) {
-    lossModel->SetLoss (b1.Get (g)->GetObject<MobilityModel> (), b1.Get (g+1)->GetObject<MobilityModel> (), 10);
-    lossModel->SetLoss (b2.Get (g)->GetObject<MobilityModel> (), b2.Get (g+1)->GetObject<MobilityModel> (), 10);
-    lossModel->SetLoss (b3.Get (g)->GetObject<MobilityModel> (), b3.Get (g+1)->GetObject<MobilityModel> (), 10);
-    lossModel->SetLoss (b4.Get (g)->GetObject<MobilityModel> (), b4.Get (g+1)->GetObject<MobilityModel> (), 10);
-  }
-  lossModel->SetLoss (b1.Get (3)->GetObject<MobilityModel> (), b2.Get (3)->GetObject<MobilityModel> (), 30);
-  lossModel->SetLoss (b2.Get (3)->GetObject<MobilityModel> (), b3.Get (3)->GetObject<MobilityModel> (), 30);
-  lossModel->SetLoss (b3.Get (3)->GetObject<MobilityModel> (), b4.Get (3)->GetObject<MobilityModel> (), 30);
-  lossModel->SetLoss (b4.Get (3)->GetObject<MobilityModel> (), b1.Get (3)->GetObject<MobilityModel> (), 30);
-*/
+
   //set up wifi using helpers
   WifiHelper wifi;
   wifi.SetStandard (WIFI_PHY_STANDARD_80211b);
@@ -363,37 +352,28 @@ void RoutingExperiment::Run (int nSinks, string CSVfileName) {
   Ipv4InterfaceContainer adhocInterfaces;
   adhocInterfaces = addressAdhoc.Assign (adhocDevices);
 
-  OnOffHelper onoff1 ("ns3::UdpSocketFactory",Address ());
-  onoff1.SetAttribute ("OnTime", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"));
-  onoff1.SetAttribute ("OffTime", StringValue ("ns3::ConstantRandomVariable[Constant=0.0]"));
+  //Create application data transmissions
+  ApplicationContainer cbrApps;
+  uint16_t cbrPort = 12345;
 
-  for (int i = 0; i < nSinks; i++) {
-    Ptr<Socket> sink = SetupPacketReceive (adhocInterfaces.GetAddress (i), adhocNodes.Get (i));
+  for (int k = 0; k < nSinks; k++) {
+    OnOffHelper onOffHelper ("ns3::UdpSocketFactory", InetSocketAddress (adhocInterfaces.GetAddress(k+1), cbrPort));
+    onOffHelper.SetAttribute ("PacketSize", UintegerValue(packetSize));
+    onOffHelper.SetAttribute ("OnTime",  StringValue ("ns3::ConstantRandomVariable[Constant=1]"));
+    onOffHelper.SetAttribute ("OffTime", StringValue ("ns3::ConstantRandomVariable[Constant=0]"));
+    onOffHelper.SetAttribute ("DataRate", StringValue ("3000000bps"));
+    onOffHelper.SetAttribute ("StartTime", TimeValue (Seconds (50+k)));
+    cbrApps.Add (onOffHelper.Install (adhocNodes.Get (k)));
 
-    AddressValue remoteAddress (InetSocketAddress (adhocInterfaces.GetAddress (i), port));
-    onoff1.SetAttribute ("Remote", remoteAddress);
+    UdpEchoClientHelper echoClientHelper (adhocInterfaces.GetAddress(k), 9);
+    echoClientHelper.SetAttribute ("MaxPackets", UintegerValue (numPackets));
+    echoClientHelper.SetAttribute ("Interval", TimeValue (Seconds (interPacketInterval)));
+    echoClientHelper.SetAttribute ("PacketSize", UintegerValue (packetSize));
+    ApplicationContainer pingApps;
 
-    Ptr<UniformRandomVariable> var = CreateObject<UniformRandomVariable> ();
-    ApplicationContainer temp = onoff1.Install (adhocNodes.Get (i + nSinks));
-    temp.Start (Seconds (var->GetValue (50.0,60.0)));
-    temp.Stop (Seconds (TotalTime));
+    echoClientHelper.SetAttribute ("StartTime", TimeValue (Seconds (50+k+0.001)));
+    pingApps.Add (echoClientHelper.Install (adhocNodes.Get (k)));
   }
-
-  stringstream ss;
-  ss << nWifis;
-  string nodes = ss.str ();
-
-  stringstream ss2;
-  ss2 << nodeSpeed;
-  string sNodeSpeed = ss2.str ();
-
-  stringstream ss3;
-  ss3 << nodePause;
-  string sNodePause = ss3.str ();
-
-  stringstream ss4;
-  ss4 << rate;
-  string sRate = ss4.str ();
 
 /*  //Graphical interpretation
   AnimationInterface anim ("manet.xml");
@@ -421,7 +401,7 @@ void RoutingExperiment::Run (int nSinks, string CSVfileName) {
     cout << "  TxOffered:        " << i->second.txBytes * 8.0 / 9.0 / 1000 / 1000  << " Mbps\n";
     cout << "  Rx Packets:       " << i->second.rxPackets << "\n";
     cout << "  Rx Bytes:         " << i->second.rxBytes << "\n";
-    if (i->second.rxBytes > 0) {
+    if (i->second.delaySum > 0) {
       cout << "  Throughput:       " << (i->second.rxBytes * 8) / i->second.delaySum << "bps \n";
     } else {
       cout << "  Throughput:       " << "0 bps \n";

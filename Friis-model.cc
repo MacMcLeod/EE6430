@@ -27,7 +27,7 @@ static void GenerateTraffic (Ptr<Socket> socket, uint32_t pktSize, uint32_t pktC
 int main (int argc, char *argv[]) {
   string phyMode ("DsssRate11Mbps");
   double distance = 500;
-  double loss = 3;
+//  double loss = 3;
   double freq = 2400000000;
   uint32_t packetSize = 1000; // bytes
   uint32_t numPackets = 1000;
