@@ -31,21 +31,10 @@
 //LAB 2
 //IAN ROBERTS AND ANNA CASE
 
-/* TOPOLOGY
-*********      **********
-BUILDING*      *BUILDING*
-*********      **********
-
-*********      **********
-BUILDING*      *BUILDING*
-*********      **********
-where each building contains 10 nodes
-each building is 1000 x 500 m
-buildings are separated by 500 m
-*/
-
 #include <fstream>
 #include <iostream>
+#include <ctime>
+#include <cstdlib>
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/internet-module.h"
@@ -81,40 +70,41 @@ public:
 private:
   Ptr<Socket> SetupPacketReceive (Ipv4Address addr, Ptr<Node> node);
   void ReceivePacket (Ptr<Socket> socket);
-  void CheckThroughput (string pName);
+  void CheckThroughput ();
 
   uint32_t port;
   uint32_t bytesTotal;
-  uint32_t packetsReceived;
-
   string CSVfileName;
+  int m_proto;
   int m_nSinks;
   double m_txp;
   bool m_traceMobility;
   uint32_t m_time;
   uint32_t m_numP;
   uint32_t m_pSize;
-  double   m_pInt;
+  Time     m_pInt;
   uint32_t m_nSep;
+  uint32_t m_pRec;
+  uint32_t m_bTot;
 };
 //Set member variables
 RoutingExperiment::RoutingExperiment ()
   : port (9),
-    bytesTotal (0),
-    packetsReceived (0),
     CSVfileName ("manet.output.csv"),
-    m_nSinks (5),
+    m_proto(1),
+    m_nSinks (1),
     m_txp(30),
     m_traceMobility (false),
     m_time (100),
     m_numP (100),
-    m_pSize (64),
+    m_pSize (50),
     m_pInt (0.1),
-    m_nSep (3)
+    m_nSep (3),
+    m_pRec (0),
+    m_bTot (0)
 {
 }
 
-//Binds sockets
 Ptr<Socket> RoutingExperiment::SetupPacketReceive (Ipv4Address addr, Ptr<Node> node) {
   TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
   Ptr<Socket> sink = Socket::CreateSocket (node, tid);
@@ -142,24 +132,24 @@ void RoutingExperiment::ReceivePacket (Ptr<Socket> socket) {
   Ptr<Packet> packet;
   Address senderAddress;
   while ((packet = socket->RecvFrom (senderAddress))) {
-    bytesTotal += packet->GetSize ();
-    packetsReceived += 1;
+    m_bTot += packet->GetSize ();
+    m_pRec += 1;
     NS_LOG_UNCOND (PrintReceivedPacket (socket, packet, senderAddress));
   }
 }
 
 //Prints to CSV file
-void RoutingExperiment::CheckThroughput (string pName) {
-  double kbs = (bytesTotal * 8.0) / 1000;
-  bytesTotal = 0;
+void RoutingExperiment::CheckThroughput () {
+  double kbs = (m_bTot * 8.0) / 1000;
+  m_bTot = 0;
   ofstream out (CSVfileName.c_str (), ios::app);
   out << (Simulator::Now ()).GetSeconds () << " , "
-      << kbs << " , " << packetsReceived << " , "
-      << m_nSinks << " , " << pName << " , "
+      << kbs << " , " << m_pRec << " , "
+      << m_nSinks << " , " << m_proto << " , "
       << m_txp << endl;
 
   out.close ();
-  packetsReceived = 0;
+  m_pRec = 0;
   Simulator::Schedule (Seconds (1.0), &RoutingExperiment::CheckThroughput, this);
 }
 
@@ -179,7 +169,18 @@ string RoutingExperiment::CommandSetup (int argc, char **argv) {
   return CSVfileName;
 }
 
+static void GenerateTraffic (Ptr<Socket> socket, uint32_t m_pSize, uint32_t pktCount, Time m_pInt ) {
+  if (pktCount > 0) {
+    socket->Send (Create<Packet> (m_pSize));
+    Simulator::Schedule (m_pInt, &GenerateTraffic,
+                         socket, m_pSize,pktCount - 1, m_pInt);
+  } else {
+    socket->Close ();
+  }
+}
+
 int main (int argc, char *argv[]) {
+  srand (time(NULL));
   RoutingExperiment experiment;
   string CSVfileName = experiment.CommandSetup (argc,argv);
   //blank out the last output file and write the column headers
@@ -193,10 +194,8 @@ int main (int argc, char *argv[]) {
   }
 }
 
-
 void RoutingExperiment::Run (string CSVfileName, int p) {
   Packet::EnablePrinting ();
-  //int nWifis = 40;
   int nBuilding = 5;
   double stories = 30;
   double naught = 0;
@@ -206,7 +205,6 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
   double y1 = 50;
   double y2 = 75;
   double y3 = 125;
-  uint32_t port = 9;
   string size ("64");
   string rate ("2048bps");
   string phyMode ("DsssRate11Mbps");
@@ -353,7 +351,11 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
       break;
     default:
       NS_FATAL_ERROR ("No such protocol");
-    }
+  }
+  m_proto = p;
+  CheckThroughput();
+  cout << "~~~~~~~~~~~~~~~~~" << pName << "~~~~~~~~~~~~~~~~~~\n";
+
   internet.SetRoutingHelper (list);
   internet.Install (adhocNodes);
 
@@ -363,31 +365,25 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
   Ipv4InterfaceContainer adhocInterfaces;
   adhocInterfaces = addressAdhoc.Assign (adhocDevices);
 
-  //Create application data transmissions
-  ApplicationContainer cbrApps;
-  for (int k = 0; k < m_nSinks; k++) {
-    OnOffHelper onOffHelper ("ns3::UdpSocketFactory", InetSocketAddress (adhocInterfaces.GetAddress(k+1), port));
-    onOffHelper.SetAttribute ("PacketSize", UintegerValue(m_pSize));
-    onOffHelper.SetAttribute ("OnTime",  StringValue ("ns3::ConstantRandomVariable[Constant=1]"));
-    onOffHelper.SetAttribute ("OffTime", StringValue ("ns3::ConstantRandomVariable[Constant=0]"));
-    onOffHelper.SetAttribute ("DataRate", StringValue ("3000000bps"));
-    onOffHelper.SetAttribute ("StartTime", TimeValue (Seconds (50+k)));
-    cbrApps.Add (onOffHelper.Install (adhocNodes.Get (k)));
 
-    UdpEchoClientHelper echoClientHelper (adhocInterfaces.GetAddress(k), port);
-    echoClientHelper.SetAttribute ("MaxPackets", UintegerValue (m_numP));
-    echoClientHelper.SetAttribute ("Interval", TimeValue (Seconds (m_pInt)));
-    echoClientHelper.SetAttribute ("PacketSize", UintegerValue (m_pSize));
-    ApplicationContainer pingApps;
+  TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
+  int si,so;
+  for (int i=0; i<m_nSinks; i++) {
+    si = rand () % 41;
+    so = rand () % 41;
+    Ptr<Socket> sink = SetupPacketReceive (adhocInterfaces.GetAddress (si), adhocNodes.Get (si));
+    Ptr<Socket> source = Socket::CreateSocket (adhocNodes.Get(so), tid);
+    InetSocketAddress remote = InetSocketAddress (adhocInterfaces.GetAddress (si, 0), port);
+    source->Connect (remote);
+    Simulator::Schedule (Seconds (50.0), &GenerateTraffic,
+                         source, m_pSize, m_numP, m_pInt);
 
-    echoClientHelper.SetAttribute ("StartTime", TimeValue (Seconds (50+k+0.001)));
-    pingApps.Add (echoClientHelper.Install (adhocNodes.Get (k)));
   }
 
   //Installs flow monitor on the nodes
   FlowMonitorHelper flowmon;
   Ptr<FlowMonitor> monitor = flowmon.InstallAll ();
-  CheckThroughput (pName);
+
   //Runs the simulations and shows output
   Simulator::Stop (Seconds (m_time));
   Simulator::Run ();
@@ -400,16 +396,16 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
     cout << "Flow:               " << i->first - 2 << " (" << t.sourceAddress << " -> " << t.destinationAddress << ")\n";
     cout << "  Tx Packets:       " << i->second.txPackets << "\n";
     cout << "  Tx Bytes:         " << i->second.txBytes << "\n";
-    cout << "  TxOffered:        " << i->second.txBytes * 8.0 / 9.0 / 1000 / 1000  << " Mbps\n";
     cout << "  Rx Packets:       " << i->second.rxPackets << "\n";
     cout << "  Rx Bytes:         " << i->second.rxBytes << "\n";
+    cout << "  Packet Loss:      " << i->second.txPackets -i->second.rxPackets << "\n";
     if (i->second.delaySum > 0) {
-      cout << "  Throughput:       " << (i->second.rxBytes * 8) / i->second.delaySum << "bps \n";
+      cout << "  Throughput:       " << (i->second.rxBytes * 8) / (i->second.timeLastRxPacket - i->second.timeFirstRxPacket) << "bps \n";
     } else {
       cout << "  Throughput:       " << "0 bps \n";
     }
-    cout << "  Mean Delay:       " << i->second.delaySum << "\n";
-    cout << "  Jitter:           " << i->second.jitterSum << "\n";
+    cout << "  Mean Delay:       " << Seconds (i->second.delaySum) << "\n";
+    cout << "  Jitter:           " << Seconds (i->second.jitterSum) << "\n";
   }
   flowmon.SerializeToXmlFile ((tr_name + ".flowmon").c_str(), false, false);
   Simulator::Destroy ();
