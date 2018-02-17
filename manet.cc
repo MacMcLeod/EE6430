@@ -73,17 +73,15 @@ NS_LOG_COMPONENT_DEFINE ("manet");
 class RoutingExperiment {
 public:
   RoutingExperiment ();
-  void Run (int nSinks, string CSVfileName);
+  void Run (string CSVfileName, int p);
   //static void SetMACParam (ns3::NetDeviceContainer & devices,
   //                                 int slotDistance);
   string CommandSetup (int argc, char **argv);
-//  void ReceivePacket (Ptr<Socket> socket);
-
 
 private:
   Ptr<Socket> SetupPacketReceive (Ipv4Address addr, Ptr<Node> node);
   void ReceivePacket (Ptr<Socket> socket);
-  void CheckThroughput ();
+  void CheckThroughput (string pName);
 
   uint32_t port;
   uint32_t bytesTotal;
@@ -91,21 +89,39 @@ private:
 
   string CSVfileName;
   int m_nSinks;
-  string m_protocolName;
   double m_txp;
   bool m_traceMobility;
-  uint32_t m_protocol;
+  uint32_t m_time;
+  uint32_t m_numP;
+  uint32_t m_pSize;
+  double   m_pInt;
+  uint32_t m_nSep;
 };
-
+//Set member variables
 RoutingExperiment::RoutingExperiment ()
   : port (9),
     bytesTotal (0),
     packetsReceived (0),
     CSVfileName ("manet.output.csv"),
+    m_nSinks (5),
     m_txp(30),
     m_traceMobility (false),
-    m_protocol (1) // OLSR
+    m_time (100),
+    m_numP (100),
+    m_pSize (64),
+    m_pInt (0.1),
+    m_nSep (3)
 {
+}
+
+//Binds sockets
+Ptr<Socket> RoutingExperiment::SetupPacketReceive (Ipv4Address addr, Ptr<Node> node) {
+  TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
+  Ptr<Socket> sink = Socket::CreateSocket (node, tid);
+  InetSocketAddress local = InetSocketAddress (addr, port);
+  sink->Bind (local);
+  sink->SetRecvCallback (MakeCallback (&RoutingExperiment::ReceivePacket, this));
+  return sink;
 }
 
 //formats output to terminal
@@ -132,13 +148,14 @@ void RoutingExperiment::ReceivePacket (Ptr<Socket> socket) {
   }
 }
 
-void RoutingExperiment::CheckThroughput () {
+//Prints to CSV file
+void RoutingExperiment::CheckThroughput (string pName) {
   double kbs = (bytesTotal * 8.0) / 1000;
   bytesTotal = 0;
   ofstream out (CSVfileName.c_str (), ios::app);
   out << (Simulator::Now ()).GetSeconds () << " , "
       << kbs << " , " << packetsReceived << " , "
-      << m_nSinks << " , " << m_protocolName << " , "
+      << m_nSinks << " , " << pName << " , "
       << m_txp << endl;
 
   out.close ();
@@ -146,21 +163,18 @@ void RoutingExperiment::CheckThroughput () {
   Simulator::Schedule (Seconds (1.0), &RoutingExperiment::CheckThroughput, this);
 }
 
-Ptr<Socket> RoutingExperiment::SetupPacketReceive (Ipv4Address addr, Ptr<Node> node) {
-  TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
-  Ptr<Socket> sink = Socket::CreateSocket (node, tid);
-  InetSocketAddress local = InetSocketAddress (addr, port);
-  sink->Bind (local);
-  sink->SetRecvCallback (MakeCallback (&RoutingExperiment::ReceivePacket, this));
-  return sink;
-}
-
+//Parses command line arguments
 string RoutingExperiment::CommandSetup (int argc, char **argv) {
   CommandLine cmd;
   cmd.AddValue ("CSVfileName", "The name of the CSV output file name", CSVfileName);
   cmd.AddValue ("traceMobility", "Enable mobility tracing", m_traceMobility);
-  cmd.AddValue ("protocol", "1=OLSR;2=AODV;3=DSDV", m_protocol);
   cmd.AddValue ("power", "Tx power dBm", m_txp);
+  cmd.AddValue ("time", "simulation time", m_time);
+  cmd.AddValue ("numP", "number of packets", m_numP);
+  cmd.AddValue ("pSize", "packet size", m_pSize);
+  cmd.AddValue ("pInt", "interpacket interval", m_pInt);
+  cmd.AddValue ("nSinks", "number of sinks", m_nSinks);
+  cmd.AddValue ("nSep", "separation of nodes", m_nSep);
   cmd.Parse (argc, argv);
   return CSVfileName;
 }
@@ -174,16 +188,16 @@ int main (int argc, char *argv[]) {
   "PacketsReceived," << "NumberOfSinks," <<
   "RoutingProtocol," << "TransmissionPower" << endl;
   out.close ();
-  int nSinks = 10;
-
-  experiment.Run (nSinks, CSVfileName);
+  for (int p=1; p<4; p++) {
+    experiment.Run (CSVfileName, p);
+  }
 }
 
 
-void RoutingExperiment::Run (int nSinks, string CSVfileName) {
+void RoutingExperiment::Run (string CSVfileName, int p) {
   Packet::EnablePrinting ();
   //int nWifis = 40;
-  int nBuilding = 10;
+  int nBuilding = 5;
   double stories = 30;
   double naught = 0;
   double x1 = 100;
@@ -192,16 +206,14 @@ void RoutingExperiment::Run (int nSinks, string CSVfileName) {
   double y1 = 50;
   double y2 = 75;
   double y3 = 125;
-  double TotalTime = 500.0;
-  int numPackets = 150;
-  int packetSize = 64;
-  int interPacketInterval = 1;
+  uint32_t port = 9;
+  string size ("64");
   string rate ("2048bps");
   string phyMode ("DsssRate11Mbps");
   string tr_name ("manet");
-  m_protocolName = "protocol";
+  string pName ("protocol");
 
-  Config::SetDefault  ("ns3::OnOffApplication::PacketSize",StringValue ("64"));
+  Config::SetDefault  ("ns3::OnOffApplication::PacketSize",StringValue (size));
   Config::SetDefault ("ns3::OnOffApplication::DataRate",  StringValue (rate));
   Config::SetDefault ("ns3::WifiRemoteStationManager::NonUnicastMode",StringValue (phyMode));
 
@@ -216,17 +228,16 @@ void RoutingExperiment::Run (int nSinks, string CSVfileName) {
   b4.Create (nBuilding);
   adhocNodes.Add(b4);
 
-
   //Instantiates static mobility
   MobilityHelper mobility;
   Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator> ();
-  for (int one=0; one<nBuilding; one+=2)
+  for (int one=0; one<nBuilding; one+=m_nSep)
     positionAlloc->Add (Vector (1000, one, 0.0));
-  for (int two=0; two<nBuilding; two+=2)
+  for (int two=0; two<nBuilding; two+=m_nSep)
     positionAlloc->Add (Vector (x2, two, 0.0));
-  for (int three=0; three<nBuilding; three+=2)
+  for (int three=0; three<nBuilding; three+=m_nSep)
     positionAlloc->Add (Vector (x2,three+1000,0.0));
-  for (int four=0; four<nBuilding; four+=2)
+  for (int four=0; four<nBuilding; four+=m_nSep)
     positionAlloc->Add (Vector (x1,four+1000,0.0));
   mobility.SetPositionAllocator (positionAlloc);
   mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
@@ -327,21 +338,21 @@ void RoutingExperiment::Run (int nSinks, string CSVfileName) {
   DsdvHelper dsdv;
   Ipv4ListRoutingHelper list;
   InternetStackHelper internet;
-  switch (m_protocol) {
+  switch (p) {
     case 1:
       list.Add (olsr, 100);
-      m_protocolName = "OLSR";
+      pName = "OLSR";
       break;
     case 2:
       list.Add (aodv, 100);
-      m_protocolName = "AODV";
+      pName = "AODV";
       break;
     case 3:
       list.Add (dsdv, 100);
-      m_protocolName = "DSDV";
+      pName = "DSDV";
       break;
     default:
-      NS_FATAL_ERROR ("No such protocol:" << m_protocol);
+      NS_FATAL_ERROR ("No such protocol");
     }
   internet.SetRoutingHelper (list);
   internet.Install (adhocNodes);
@@ -354,40 +365,31 @@ void RoutingExperiment::Run (int nSinks, string CSVfileName) {
 
   //Create application data transmissions
   ApplicationContainer cbrApps;
-  uint16_t cbrPort = 12345;
-
-  for (int k = 0; k < nSinks; k++) {
-    OnOffHelper onOffHelper ("ns3::UdpSocketFactory", InetSocketAddress (adhocInterfaces.GetAddress(k+1), cbrPort));
-    onOffHelper.SetAttribute ("PacketSize", UintegerValue(packetSize));
+  for (int k = 0; k < m_nSinks; k++) {
+    OnOffHelper onOffHelper ("ns3::UdpSocketFactory", InetSocketAddress (adhocInterfaces.GetAddress(k+1), port));
+    onOffHelper.SetAttribute ("PacketSize", UintegerValue(m_pSize));
     onOffHelper.SetAttribute ("OnTime",  StringValue ("ns3::ConstantRandomVariable[Constant=1]"));
     onOffHelper.SetAttribute ("OffTime", StringValue ("ns3::ConstantRandomVariable[Constant=0]"));
     onOffHelper.SetAttribute ("DataRate", StringValue ("3000000bps"));
     onOffHelper.SetAttribute ("StartTime", TimeValue (Seconds (50+k)));
     cbrApps.Add (onOffHelper.Install (adhocNodes.Get (k)));
 
-    UdpEchoClientHelper echoClientHelper (adhocInterfaces.GetAddress(k), 9);
-    echoClientHelper.SetAttribute ("MaxPackets", UintegerValue (numPackets));
-    echoClientHelper.SetAttribute ("Interval", TimeValue (Seconds (interPacketInterval)));
-    echoClientHelper.SetAttribute ("PacketSize", UintegerValue (packetSize));
+    UdpEchoClientHelper echoClientHelper (adhocInterfaces.GetAddress(k), port);
+    echoClientHelper.SetAttribute ("MaxPackets", UintegerValue (m_numP));
+    echoClientHelper.SetAttribute ("Interval", TimeValue (Seconds (m_pInt)));
+    echoClientHelper.SetAttribute ("PacketSize", UintegerValue (m_pSize));
     ApplicationContainer pingApps;
 
     echoClientHelper.SetAttribute ("StartTime", TimeValue (Seconds (50+k+0.001)));
     pingApps.Add (echoClientHelper.Install (adhocNodes.Get (k)));
   }
 
-/*  //Graphical interpretation
-  AnimationInterface anim ("manet.xml");
-  anim.SetMobilityPollInterval(Time(0.5));
-  anim.SetStartTime (Seconds(50));
-  anim.SetStopTime (Seconds(TotalTime));
-  anim.EnablePacketMetadata(true);
-*/  //Enables flowmonitor for XML
-
+  //Installs flow monitor on the nodes
   FlowMonitorHelper flowmon;
   Ptr<FlowMonitor> monitor = flowmon.InstallAll ();
-  CheckThroughput ();
-
-  Simulator::Stop (Seconds (TotalTime));
+  CheckThroughput (pName);
+  //Runs the simulations and shows output
+  Simulator::Stop (Seconds (m_time));
   Simulator::Run ();
   monitor->CheckForLostPackets ();
   Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier> (flowmon.GetClassifier ());
