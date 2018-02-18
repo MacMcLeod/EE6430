@@ -196,7 +196,7 @@ int main (int argc, char *argv[]) {
 
 void RoutingExperiment::Run (string CSVfileName, int p) {
   Packet::EnablePrinting ();
-  int nBuilding = 5;
+  int nBuilding = 10;
   double stories = 30;
   double naught = 0;
   double x1 = 100;
@@ -276,7 +276,6 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
   Building1->SetBoundaries (Box (naught, x1, naught, y1, naught, stories));
   Building1->SetBuildingType(Building::Commercial);
   Building1->SetExtWallsType(Building::ConcreteWithWindows);
-  Building1->SetNFloors(3);
   Ptr<MobilityBuildingInfo> b1Info = CreateObject<MobilityBuildingInfo> ();
   BuildingsHelper::Install(b1);
 
@@ -284,7 +283,6 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
   Building2->SetBoundaries (Box (x2, x3, naught, y1, naught, stories));
   Building2->SetBuildingType(Building::Commercial);
   Building2->SetExtWallsType(Building::ConcreteWithWindows);
-  Building2->SetNFloors(3);
   Ptr<MobilityBuildingInfo> b2Info = CreateObject<MobilityBuildingInfo> ();
   BuildingsHelper::Install(b2);
 
@@ -292,7 +290,6 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
   Building3->SetBoundaries (Box (x2, x3, y2, y3, naught, stories));
   Building3->SetBuildingType(Building::Commercial);
   Building3->SetExtWallsType(Building::ConcreteWithWindows);
-  Building3->SetNFloors(3);
   Ptr<MobilityBuildingInfo> b3Info = CreateObject<MobilityBuildingInfo> ();
   BuildingsHelper::Install(b3);
 
@@ -300,7 +297,6 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
   Building4->SetBoundaries (Box (naught, x1, y2, y3, naught, stories));
   Building4->SetBuildingType(Building::Commercial);
   Building4->SetExtWallsType(Building::ConcreteWithWindows);
-  Building4->SetNFloors(3);
   Ptr<MobilityBuildingInfo> b4Info = CreateObject<MobilityBuildingInfo> ();
   BuildingsHelper::Install(b4);
 
@@ -365,19 +361,18 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
   Ipv4InterfaceContainer adhocInterfaces;
   adhocInterfaces = addressAdhoc.Assign (adhocDevices);
 
-
   TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
   int si,so;
   for (int i=0; i<m_nSinks; i++) {
-    si = rand () % 41;
-    so = rand () % 41;
+    si = rand () % 40;
+    so = rand () % 40;
+    cout << si << " " << so << "\n";
     Ptr<Socket> sink = SetupPacketReceive (adhocInterfaces.GetAddress (si), adhocNodes.Get (si));
     Ptr<Socket> source = Socket::CreateSocket (adhocNodes.Get(so), tid);
     InetSocketAddress remote = InetSocketAddress (adhocInterfaces.GetAddress (si, 0), port);
     source->Connect (remote);
     Simulator::Schedule (Seconds (50.0), &GenerateTraffic,
                          source, m_pSize, m_numP, m_pInt);
-
   }
 
   //Installs flow monitor on the nodes
