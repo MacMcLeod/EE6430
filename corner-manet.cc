@@ -1,4 +1,3 @@
-
 /*
  * Copyright (c) 2011 University of Kansas
  *
@@ -253,28 +252,32 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
                              "Time", StringValue ("2s"),
                              "Speed", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
                              "Bounds", StringValue ("0|100|0|50"));
-  walk.Install(b1);
+  for (int bu1 = 1; bu1 < nBuilding; bu1++) 
+    walk.Install(b1.Get(bu1));
   //Bounds for building 2
   walk.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
                              "Mode", StringValue ("Time"),
                              "Time", StringValue ("2s"),
                              "Speed", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
                              "Bounds", StringValue ("125|225|0|50"));
-  walk.Install(b2);
+  for (int bu2 = 1; bu2 < nBuilding; bu2++) 
+    walk.Install(b2.Get(bu2));
   //Bounds for building 3
   walk.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
                              "Mode", StringValue ("Time"),
                              "Time", StringValue ("2s"),
                              "Speed", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
                              "Bounds", StringValue ("125|225|75|125"));
-  walk.Install(b3);
+  for (int bu3 = 1; bu3 < nBuilding; bu3++) 
+    walk.Install(b3.Get(bu3));
   //Bounds for building 4
   walk.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
                              "Mode", StringValue ("Time"),
                              "Time", StringValue ("2s"),
                              "Speed", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
                              "Bounds", StringValue ("0|100|75|125"));
-  walk.Install(b4);
+  for (int bu4 = 1; bu4 < nBuilding; bu4++)
+    walk.Install(b4.Get(bu4));
 
 
   Ptr<Building> Building1 = CreateObject<Building> ();
@@ -360,11 +363,12 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
   internet.SetRoutingHelper (list);
   internet.Install (adhocNodes);
 
-  //NS_LOG_INFO ("assigning ip address");
+  NS_LOG_INFO ("assigning ip address");
   Ipv4AddressHelper addressAdhoc;
   addressAdhoc.SetBase ("10.0.0.0", "255.255.255.0");
   Ipv4InterfaceContainer adhocInterfaces;
   adhocInterfaces = addressAdhoc.Assign (adhocDevices);
+
 
   TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
   int si,so;

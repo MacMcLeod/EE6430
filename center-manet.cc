@@ -1,4 +1,3 @@
-
 /*
  * Copyright (c) 2011 University of Kansas
  *
@@ -92,7 +91,7 @@ RoutingExperiment::RoutingExperiment ()
   : port (9),
     CSVfileName ("manet.output.csv"),
     m_proto(1),
-    m_nSinks (1),
+    m_nSinks (3),
     m_txp(15),
     m_traceMobility (false),
     m_time (55),
@@ -217,7 +216,7 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
   Config::SetDefault ("ns3::WifiRemoteStationManager::NonUnicastMode",StringValue (phyMode));
 
   //Create node containers for each building and one for all nodes
-  NodeContainer b1, b2, b3, b4, adhocNodes;
+  NodeContainer bs, b1, b2, b3, b4, adhocNodes;
   b1.Create (nBuilding);
   adhocNodes.Add(b1);
   b2.Create (nBuilding);
@@ -226,9 +225,10 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
   adhocNodes.Add(b3);
   b4.Create (nBuilding);
   adhocNodes.Add(b4);
+  bs.Create (1);
+  adhocNodes.Add(bs);
 
-  //Instantiates static mobility
-  MobilityHelper mobility;
+  MobilityHelper mobility, walk;
   Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator> ();
   positionAlloc->Add (Vector(x1,y1,0));
   for (int one=1; one<nBuilding; one++)
@@ -242,11 +242,11 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
   positionAlloc->Add (Vector (x1,y2,0));
   for (int four=1; four<nBuilding; four++)
     positionAlloc->Add (Vector (x2,y2+four*m_nSep,0.0));
+  positionAlloc->Add (Vector (112,62,0));
   mobility.SetPositionAllocator (positionAlloc);
   mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
   mobility.Install (adhocNodes);
 
-  MobilityHelper walk;
   //Bounds for building 1
   walk.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
                              "Mode", StringValue ("Time"),
@@ -254,6 +254,7 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
                              "Speed", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
                              "Bounds", StringValue ("0|100|0|50"));
   walk.Install(b1);
+
   //Bounds for building 2
   walk.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
                              "Mode", StringValue ("Time"),
@@ -261,6 +262,7 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
                              "Speed", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
                              "Bounds", StringValue ("125|225|0|50"));
   walk.Install(b2);
+
   //Bounds for building 3
   walk.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
                              "Mode", StringValue ("Time"),
@@ -268,6 +270,7 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
                              "Speed", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
                              "Bounds", StringValue ("125|225|75|125"));
   walk.Install(b3);
+
   //Bounds for building 4
   walk.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
                              "Mode", StringValue ("Time"),
@@ -304,6 +307,10 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
   Building4->SetExtWallsType(Building::ConcreteWithWindows);
   Ptr<MobilityBuildingInfo> b4Info = CreateObject<MobilityBuildingInfo> ();
   BuildingsHelper::Install(b4);
+
+  Ptr<MobilityBuildingInfo> bsInfo = CreateObject<MobilityBuildingInfo> ();
+  bsInfo->SetOutdoor();
+  BuildingsHelper::Install(bs);
 
   //Performs consistency check on all nodes
   BuildingsHelper::MakeMobilityModelConsistent ();
@@ -360,11 +367,12 @@ void RoutingExperiment::Run (string CSVfileName, int p) {
   internet.SetRoutingHelper (list);
   internet.Install (adhocNodes);
 
-  //NS_LOG_INFO ("assigning ip address");
+  NS_LOG_INFO ("assigning ip address");
   Ipv4AddressHelper addressAdhoc;
   addressAdhoc.SetBase ("10.0.0.0", "255.255.255.0");
   Ipv4InterfaceContainer adhocInterfaces;
   adhocInterfaces = addressAdhoc.Assign (adhocDevices);
+
 
   TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
   int si,so;
